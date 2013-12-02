@@ -9,9 +9,9 @@ package ca.scorrent.scapp
  */
 import akka.actor._
 import akka.actor.{Props, ActorSystem, Actor}
-import ca.curls.test.shared._
 import com.typesafe.config.ConfigFactory
 import java.io.File
+import ca.curls.test.shared.Command
 
 /**
  * Reads a file and splits it into fixed-size chunks. Returns the chunks in sequential order
