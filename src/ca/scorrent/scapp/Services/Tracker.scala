@@ -1,7 +1,8 @@
 package ca.scorrent.scapp.Services
 
-import akka.actor.{ActorRef, Actor}
+import akka.actor.{Props, ActorSystem, ActorRef, Actor}
 import scala.collection.immutable.HashMap
+import com.typesafe.config.ConfigFactory
 
 /**
  * Created with IntelliJ IDEA.
@@ -16,7 +17,10 @@ class Tracker extends Actor{
 
   def receive = {
     case CheckIn =>
-      oldTimes = oldTimes + (sender -> peers(sender))
+      println("Received a checkin from: " + sender.path.toString())
+      if (peers contains sender) {
+        oldTimes = oldTimes + (sender -> peers(sender))
+      }
       peers = peers.filterNot(
         (pair) => {
           pair._1 == sender
@@ -41,4 +45,22 @@ class Tracker extends Actor{
     case _ =>
       println("Fuck off wrong thing sent")
   }
+}
+
+object TrackerDriver extends App {
+  val system = ActorSystem("TrackerSystem", ConfigFactory.parseString("""
+    akka {
+       actor {
+           provider = "akka.remote.RemoteActorRefProvider"
+       }
+       remote {
+           transport = "akka.remote.netty.NettyRemoteTransport"
+           netty.tcp {
+              hostname = "localhost"
+              port = 1338
+           }
+        }
+    }
+  """))
+  val tracker = system.actorOf(Props[Tracker], name = "Tracker")
 }

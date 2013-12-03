@@ -12,6 +12,8 @@ import akka.actor.{Props, ActorSystem, Actor}
 import com.typesafe.config.ConfigFactory
 import java.io.File
 import ca.curls.test.shared.{ChunkRequest, Echo, Chunk}
+import ca.scorrent.scapp.Services.CheckIn
+import scala.concurrent.duration._
 
 /**
  * Reads a file and splits it into fixed-size chunks. Returns the chunks in sequential order
@@ -70,6 +72,7 @@ object Client {
 class Client(fileChunker: FileChunker) extends Actor with ActorLogging {
 
   val server = context.actorSelection("akka.tcp://HelloRemoteSystem@localhost:1337/user/Server")
+  val tracker = context.actorSelection("akka.tcp://TrackerSystem@localhost:1338/user/Tracker")
 
   def receive: Actor.Receive = {
     case "start" =>
@@ -81,6 +84,9 @@ class Client(fileChunker: FileChunker) extends Actor with ActorLogging {
       }*/
     case ChunkRequest(chunkNumber) =>
       server ! Chunk(chunkNumber, fileChunker.chunks(chunkNumber))
+    case "checkin" =>
+      // This tells the peer to checkin with the Tracker
+      tracker ! CheckIn
   }
 }
 
@@ -108,6 +114,10 @@ object Main extends App {
 
   val client = system.actorOf(Client.props(fileChunker))
   client ! "start"
+
+  import system.dispatcher
+
+  system.scheduler.schedule(FiniteDuration(0L, SECONDS), FiniteDuration(15L, SECONDS), client, "checkin")
 
   // Type 'send' commands to send a chunk to server
   /*do {
