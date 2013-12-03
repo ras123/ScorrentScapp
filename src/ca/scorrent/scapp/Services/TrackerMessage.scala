@@ -18,3 +18,4 @@ case class Peers(peers: List[ActorPath]) extends TrackerMessage
 case object PeerRequest extends TrackerMessage
 case class NewPeers(np: Boolean) extends TrackerMessage
 case object Prune extends TrackerMessage
+case class Register(uuid: String) extends TrackerMessage

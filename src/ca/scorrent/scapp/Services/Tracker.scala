@@ -16,6 +16,8 @@ class Tracker extends Actor{
   var oldTimes: Map[ActorRef, Long] = new HashMap[ActorRef, Long]()
 
   def receive = {
+    case "Stop" =>
+      context stop self
     case CheckIn =>
       println("Received a checkin from: " + sender.path.toString())
       if (peers contains sender) {
@@ -39,7 +41,7 @@ class Tracker extends Actor{
     case Prune =>
       peers = peers.filter(
         (pair) => {
-          pair._2 > System.currentTimeMillis()-(HeartBeat.Rate*1000)
+          pair._2 > System.currentTimeMillis()-(HeartBeat.Rate*2000)
         }
       )
     case _ =>

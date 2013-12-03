@@ -12,13 +12,7 @@ import ca.curls.test._
  * To change this template use File | Settings | File Templates.
  */
 class Scorrent(val name: String, val tracker: String, val uuid: String) {
-
-
   var status: ScorrentState = Waiting
-
-  val totalSize = 209715200
-
-  //TODO: include akka io junk here
 
   def getPercentDone() = {
     math.random*100
@@ -48,11 +42,11 @@ class Scorrent(val name: String, val tracker: String, val uuid: String) {
   def size(unit: SizeUnit): Int = {
     unit match {
       case MB =>
-        totalSize / 1048576
+        200
       case KB =>
-        totalSize / 1024
+        200
       case B =>
-        totalSize
+        200
     }
   }
 }
