@@ -357,7 +357,26 @@ object Main extends SimpleSwingApplication{
     }
   }
 
-  def loadFile(file: File) = {
+  def loadFile(ofile: File) = {
+    var file = ofile
+    if(UserPrefs.get[Boolean](Backup) && !file.getAbsolutePath.contains(UserPrefs.get[File](ScorDirectory).getAbsolutePath)){
+      val newFile = new File(UserPrefs.get[File](ScorDirectory).getAbsolutePath + File.separator + file.getName)
+
+      var buffer: Array[Byte] = new Array[Byte](4096) // fuck you arbitrary values are great
+      val is = new FileInputStream(file)
+      val os = new FileOutputStream(newFile)
+      var length:Int = -1
+
+      do{
+        length = is.read(buffer)
+        if(length != -1)
+          os.write(buffer, 0, length)
+      }while(length != -1)
+
+      is.close()
+      os.close()
+      file = newFile
+    }
     val scor = ScorrentParser.Load(file)
     if(scor != null){
       if(listStView.foldLeft(false)(

@@ -23,6 +23,8 @@ object UserPrefs {
     map put(ScorDirectory, new File((root \ "ScDir" head) text))
     map put(InfoShown, ((root \ "Info" head) text) == "true")
     map put(PortNumber, ((root \ "Port" head) text) toInt)
+    map put(Backup, ((root \ "Backup" head) text) == "true")
+
   }
   else{
     val dlDir = new File("downloads")
@@ -53,6 +55,7 @@ object UserPrefs {
         <ScDir>{get(ScorDirectory)}</ScDir>
         <Info>{get(InfoShown).toString}</Info>
         <Port>{get(PortNumber)}</Port>
+        <Backup>{get(Backup)}</Backup>
       </Root>
 
       val writer = new PrintWriter(file)
