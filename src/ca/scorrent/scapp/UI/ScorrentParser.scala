@@ -6,6 +6,7 @@ import scala.xml._
 import ca.scorrent.scapp.Model.Scorrent
 import scala.swing.Dialog
 import javax.swing.UIManager
+import ca.scorrent.scapp.Utils.{FileChunker, FileHasher}
 
 /**
  * Created with IntelliJ IDEA.
@@ -18,7 +19,7 @@ object ScorrentParser {
   def Build(name: String, files: List[File]) = {
     <Scorrent>
       <Name>{name}</Name>
-      <UUID>{new BASE64Encoder().encode(MessageDigest.getInstance("SHA-256").digest(name.getBytes()) ++ LongToBytes(System.currentTimeMillis()))}</UUID>
+      <UUID>{FileHasher.getDatDankHashForNewFileName(name.getBytes)}</UUID>
       <Tracker>localhost:1337</Tracker>{/*TODO get the bound port and address from akka or some shit */ }
       <ChunkSize>4096</ChunkSize>{/*TODO Get some Kit Kat up in here */ }
       <Files>
@@ -46,10 +47,6 @@ object ScorrentParser {
     }
   }
 
-  private def getDatDankHash(byteArray : Array[Byte]): String = {
-    new BASE64Encoder().encode(MessageDigest.getInstance("SHA-256").digest(byteArray))
-  }
-
   //for the uuid
   private def LongToBytes(l: Long) = {
     val ret: Array[Byte] = new Array[Byte](8)
@@ -58,29 +55,9 @@ object ScorrentParser {
     ret
   }
 
-  private def getChunks(file: File) : Vector[Array[Byte]] = {
-    val CHUNK_LENGTH = 10
-    var chunks = Vector[Array[Byte]]()
-
-    val plzChunkMe = com.google.common.io.Files toByteArray file
-
-    val numChunks =
-      if (plzChunkMe.length % CHUNK_LENGTH == 0)
-        plzChunkMe.length / CHUNK_LENGTH
-      else
-        plzChunkMe.length / CHUNK_LENGTH + 1
-
-    for (i <- 0 to numChunks - 1) {
-      val baseIndex = i * CHUNK_LENGTH
-      val chunk = plzChunkMe slice(baseIndex, baseIndex + CHUNK_LENGTH)
-      chunks = chunks :+ chunk
-    }
-    chunks
-  }
   //recursively build file
   private def createXMLFile(file: File, relDir: String = ""): Elem = {
-    val chunks = getChunks(file)
-    val fileBytes = com.google.common.io.Files toByteArray file
+    val chunks = FileChunker.getChunks(file).toArray
     if(file.isDirectory){
       <Folder>
         {
@@ -91,11 +68,19 @@ object ScorrentParser {
       </Folder>
     }
     else{
-      <File name={relDir+file.getName} hash={getDatDankHash(fileBytes)}>
-        { for(c <- chunks)
-            <Chunk index="test" hash={getDatDankHash(c)}/>
+      <File name={relDir+file.getName} hash={FileHasher.getDatDankHash(file)}>
+        {
+          for(i <- 0 until chunks.length)
+            yield createXMLChunk(chunks(i), i)
         }
       </File>
     }
+  }
+
+  private def createXMLChunk(chunk : Array[Byte], index : Int) : Elem = {
+    val test = <Chunk index={index.toString} hash={FileHasher.getDatDankHash(chunk)}>
+    </Chunk>
+    println(test)
+    test
   }
 }

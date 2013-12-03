@@ -112,6 +112,7 @@ class CreateDialog extends Dialog{
                   case _ =>
                     progressDialog.close()
                     future {
+                      val test = fc.selectedFile
                       val xml = ScorrentParser.Build(teName.text, files)
 
                       val writer = new PrintWriter(fc.selectedFile)
