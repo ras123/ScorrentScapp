@@ -18,3 +18,8 @@ project/plugins/project/
 # Scala-IDE specific
 .scala_dependencies
 .worksheet
+
+# because of our ui.
+current
+downloads/
+prefs

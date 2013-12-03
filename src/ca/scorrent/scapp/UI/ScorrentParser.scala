@@ -46,6 +46,10 @@ object ScorrentParser {
     }
   }
 
+  private def getDatDankHash(byteArray : Array[Byte]): String = {
+    new BASE64Encoder().encode(MessageDigest.getInstance("SHA-256").digest(byteArray))
+  }
+
   //for the uuid
   private def LongToBytes(l: Long) = {
     val ret: Array[Byte] = new Array[Byte](8)
@@ -54,8 +58,29 @@ object ScorrentParser {
     ret
   }
 
+  private def getChunks(file: File) : Vector[Array[Byte]] = {
+    val CHUNK_LENGTH = 10
+    var chunks = Vector[Array[Byte]]()
+
+    val plzChunkMe = com.google.common.io.Files toByteArray file
+
+    val numChunks =
+      if (plzChunkMe.length % CHUNK_LENGTH == 0)
+        plzChunkMe.length / CHUNK_LENGTH
+      else
+        plzChunkMe.length / CHUNK_LENGTH + 1
+
+    for (i <- 0 to numChunks - 1) {
+      val baseIndex = i * CHUNK_LENGTH
+      val chunk = plzChunkMe slice(baseIndex, baseIndex + CHUNK_LENGTH)
+      chunks = chunks :+ chunk
+    }
+    chunks
+  }
   //recursively build file
   private def createXMLFile(file: File, relDir: String = ""): Elem = {
+    val chunks = getChunks(file)
+    val fileBytes = com.google.common.io.Files toByteArray file
     if(file.isDirectory){
       <Folder>
         {
@@ -66,8 +91,10 @@ object ScorrentParser {
       </Folder>
     }
     else{
-      <File name={relDir+file.getName} hash="baadf00d">{/*TODO: get datdankhash for ehre and get some chunky fun times below*/}
-        <ChunkyPlacehodler/>
+      <File name={relDir+file.getName} hash={getDatDankHash(fileBytes)}>
+        { for(c <- chunks)
+            <Chunk index="test" hash={getDatDankHash(c)}/>
+        }
       </File>
     }
   }

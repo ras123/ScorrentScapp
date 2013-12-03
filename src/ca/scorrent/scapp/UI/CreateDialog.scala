@@ -164,7 +164,8 @@ class CreateDialog extends Dialog{
       })
     }
     else{
-      val stream = new URL("file:\\"+file.getAbsolutePath).openStream()
+      val separator = File.separator
+      val stream = new URL("file:"+separator+separator+file.getAbsolutePath).openStream()
       val size = stream.available()
       stream.close()
       size
