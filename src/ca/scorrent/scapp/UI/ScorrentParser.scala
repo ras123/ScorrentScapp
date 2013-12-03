@@ -16,11 +16,11 @@ import ca.scorrent.scapp.Utils.{FileChunker, FileHasher}
  * To change this template use File | Settings | File Templates.
  */
 object ScorrentParser {
-  def Build(name: String, files: List[File]) = {
+  def Build(name: String, tracker: String, files: List[File]) = {
     <Scorrent>
       <Name>{name}</Name>
       <UUID>{FileHasher.getDatDankHashForNewFileName(name.getBytes)}</UUID>
-      <Tracker>localhost:1337</Tracker>{/*TODO get the bound port and address from akka or some shit */ }
+      <Tracker>{tracker}</Tracker>
       <ChunkSize>4096</ChunkSize>{/*TODO Get some Kit Kat up in here */ }
       <Files>
         {for(f <- files) yield createXMLFile(f)}

@@ -15,6 +15,9 @@ import scala.swing.event.ButtonClicked
 import java.net.URL
 import scala.concurrent._
 import ExecutionContext.Implicits.global
+import akka.actor.ActorSystem
+import com.typesafe.config.{ConfigFactory, Config}
+import ca.scorrent.scapp.Services.Register
 
 /**
  * Created with IntelliJ IDEA.
@@ -26,6 +29,9 @@ import ExecutionContext.Implicits.global
 class CreateDialog extends Dialog{
   title = "Create a scorrent"
   val teName = new TextField()
+  val teTracker = new TextField(){
+    text = "localhost:6969"
+  }
 
   val display = new BoxPanel(Orientation.Vertical)
 
@@ -34,6 +40,11 @@ class CreateDialog extends Dialog{
     contents += new BoxPanel(Orientation.Horizontal){
       contents += new Label("Name:")
       contents += teName
+      maximumSize = new Dimension(Integer.MAX_VALUE,30)
+    }
+    contents += new BoxPanel(Orientation.Horizontal){
+      contents += new Label("Tracker: ")
+      contents += teTracker
       maximumSize = new Dimension(Integer.MAX_VALUE,30)
     }
     contents += new Spacer(20, Orientation.Horizontal)
@@ -95,34 +106,45 @@ class CreateDialog extends Dialog{
                 val progressDialog = new ProgressDialog()
                 progressDialog.open()
                 progressDialog.progressBar.indeterminate = true
-
-                val total = files.foldLeft(0)((current, nFile) => {
-                  current + countBytes(nFile)
-                })
-                progressDialog.progressBar.indeterminate = false
-                progressDialog.progressBar.max = total
-                progressDialog.lblStatus.text = "Copying"
-
                 future {
-                  files map {
-                    f =>
-                      copy(progressDialog, f,UserPrefs.get[File](DownloadDirectory).getAbsolutePath+File.separator)
-                  }
+                  val total = files.foldLeft(0)((current, nFile) => {
+                    current + countBytes(nFile)
+                  })
+                  progressDialog.progressBar.indeterminate = false
+                  progressDialog.progressBar.max = total
+                  progressDialog.lblStatus.text = "Copying"
                 } onSuccess {
                   case _ =>
-                    progressDialog.close()
-                    future {
-                      val test = fc.selectedFile
-                      val xml = ScorrentParser.Build(teName.text, files)
-
-                      val writer = new PrintWriter(fc.selectedFile)
-                      writer.write(xml.mkString)
-                      writer.close
-                    } onSuccess {
-                      case _ =>
-                        Main.loadFile(fc.selectedFile)
-                        Main.updateList()
+                  future {
+                    files map {
+                      f =>
+                        copy(progressDialog, f,UserPrefs.get[File](DownloadDirectory).getAbsolutePath+File.separator)
                     }
+                  } onSuccess {
+                    case _ =>
+                      progressDialog.close()
+                      val f = future {
+                        val test = fc.selectedFile
+                        val xml = ScorrentParser.Build(teName.text, teTracker.text, files)
+
+                        register(teTracker.text, (xml \\ "UUID" head) text)
+
+                        val writer = new PrintWriter(fc.selectedFile)
+                        writer.write(xml.mkString)
+                        writer.close
+                      }
+                      f onSuccess {
+                        case _ =>
+                          Main.loadFile(fc.selectedFile)
+                          Main.updateList()
+                      }
+                      f onFailure {
+                        case ex:Throwable =>
+                          Dialog.showMessage(message = ex.getMessage)
+                          ex.printStackTrace()
+                      }
+
+                  }
                 }
               }
             }
@@ -165,8 +187,7 @@ class CreateDialog extends Dialog{
       })
     }
     else{
-      val separator = File.separator
-      val stream = new URL("file:"+separator+separator+file.getAbsolutePath).openStream()
+      val stream = new URL("file:///"+file.getAbsolutePath).openStream()
       val size = stream.available()
       stream.close()
       size
@@ -204,6 +225,24 @@ class CreateDialog extends Dialog{
         os.close()
       }
     }
+  }
+
+  def register(tracker:String, uuid: String) = {
+    val system = ActorSystem("Temp", ConfigFactory.parseString("""
+    akka {
+       actor {
+           provider = "akka.remote.RemoteActorRefProvider"
+       }
+       remote {
+           transport = "akka.remote.netty.NettyRemoteTransport"
+           netty.tcp {
+              hostname = "localhost"
+              port = 0
+           }
+        }
+    }
+    """))
+    system.actorSelection("akka.tcp://Tracker@"+tracker+"/user/Manager") ! Register(uuid)
   }
 }
 

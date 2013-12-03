@@ -10,7 +10,7 @@ import ca.curls.test.shared.{ChunkRequest, Echo, Chunk}
 import java.io.{PrintWriter, BufferedWriter, File}
 import com.google.common.io.Files
 import java.nio.charset.Charset
-
+import scala.concurrent.duration._
 
 /**
  * Created with IntelliJ IDEA.
@@ -35,7 +35,7 @@ object TrackerServer extends App{
     }
   """))
   println("Hi")
-  val manager = system.actorOf(Props(new Manager(system)), name="Manager")
+  val manager = system.actorOf(Manager.props(system), name="Manager")
 
   var input:String = ""
   do {
@@ -46,9 +46,11 @@ object TrackerServer extends App{
   println("Connection closed")
 }
 
-//object Manager
+object Manager {
+  def props(system: ActorSystem): Props = Props(classOf[Manager], system)
+}
 
-class Manager(val system: ActorSystem) extends Actor{
+class Manager(system: ActorSystem) extends Actor{
   var ScorTrackers = List[ActorRef]()
 
   def receive = {
@@ -57,6 +59,8 @@ class Manager(val system: ActorSystem) extends Actor{
       //fuck saving things
       context stop self
     case Register(uuid: String) =>
-      ScorTrackers = ScorTrackers :+ system.actorOf(Props[Tracker], name = uuid)
+      val newActor = system.actorOf(Props[Tracker], name = uuid)
+      ScorTrackers = ScorTrackers :+ newActor
+      system.scheduler.schedule(0 milliseconds, HeartBeat.Rate*2 seconds, newActor, Prune)
   }
 }
