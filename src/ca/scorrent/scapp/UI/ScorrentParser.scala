@@ -68,8 +68,8 @@ object ScorrentParser {
       </Folder>
     }
     else{
-      <File name={relDir+file.getName} hash={FileHasher.getDatDankHash(file)} chunks={chunks.length}>
-
+      <File name={relDir+file.getName} hash={FileHasher.getDatDankHash(file)}>
+      <NumOfChunks>{chunks.length}</NumOfChunks>
         {
           for(i <- 0 until chunks.length)
             yield createXMLChunk(chunks(i), i)
