@@ -10,8 +10,8 @@ import akka.io.Tcp
  * To change this template use File | Settings | File Templates.
  */
 trait Request extends Tcp.Command
-case class Command(msg: String) extends Request
+case class Echo(msg: String) extends Request
+case class ChunkRequest(chunkNumber: Integer) extends Request
 
 trait Reply extends Tcp.Command
-case object CommandSuccess extends Reply
-case class CommandFailure(msg: String) extends Reply
+case class Chunk(chunkNumber: Integer, chunk: Array[Byte])
