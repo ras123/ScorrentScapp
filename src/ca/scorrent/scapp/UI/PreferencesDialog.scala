@@ -20,12 +20,16 @@ class PreferencesDialog extends Dialog{
     val lblPort = new Label("Port: ")
     val lblBackup = new Label("Backup: ")
     val tedlDir = new TextField(UserPrefs.get[File](DownloadDirectory).getAbsolutePath)
-    val tescDir = new TextField(UserPrefs.get[File](ScorDirectory).getAbsolutePath)
+    val tescDir = new TextField(UserPrefs.get[File](ScorDirectory).getAbsolutePath){
+      enabled = UserPrefs.get[Boolean](Backup)
+    }
     val tePort = new TextField(UserPrefs.get[Int](PortNumber).toString)
     val cbBackup = new CheckBox("Backup scorrents to local directory"){
+      selected = UserPrefs.get[Boolean](Backup)
       reactions += {
         case ButtonClicked(_) =>
-          println(enabled)
+          tescDir.enabled = selected
+          UserPrefs.set(Backup, selected)
       }
     }
 
