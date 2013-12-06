@@ -1,14 +1,12 @@
 package ca.scorrent.scapp.Utils
 
-import java.io.{FileOutputStream, File}
-import java.security.MessageDigest
-import sun.misc.BASE64Encoder
+import java.io.File
 import scala.xml._
 import ca.scorrent.scapp.Model.Scorrent
 import scala.swing.Dialog
 import javax.swing.UIManager
-import ca.scorrent.scapp.Utils.{FileChunker, FileHasher, Constants}
-import java.util
+import scala.util.Random
+import scala.collection.mutable.ListBuffer
 
 /**
  * Created with IntelliJ IDEA.
@@ -55,7 +53,12 @@ object ScorrentParser {
         files =  files :+ fileName
       }
 
-      new Scorrent(name, tracker, uuid, numOfChunks.toInt, files)
+      var chunkHashes = Vector[String]()
+      for (hash <- (root \\ "Chunk")) {
+        chunkHashes = chunkHashes :+ getAttribute(hash, "hash")
+      }
+
+      new Scorrent(name, tracker, uuid, numOfChunks.toInt, files, chunkHashes)
     }
     catch{
       case ex: Throwable => //TODO Should probably change this up, was a just a lazy thing
@@ -98,25 +101,12 @@ object ScorrentParser {
   private def createXMLChunk(chunk : Array[Byte], index : Int) : Elem = {
     val test = <Chunk index={index.toString} hash={FileHasher.getDatDankHash(chunk)}>
     </Chunk>
-    println(test)
     test
   }
 }
 
 // This is just for local testing
 object ScorrentParserDriver extends App {
-  /*val scor = ScorrentParser.Load(new File("/home/ras/ScorrentScapp/scors/file.scor"))
-  println("Name: " + scor.name)
-  println("Chunks: " + scor.numOfChunks)*/
-
-  var chunks = Vector[Array[Byte]]()
-  chunks = chunks :+ "Hello ".getBytes
-  chunks = chunks :+ "there".getBytes
-
-  //println("Size of data: " + data.size)
-
-  val os = new FileOutputStream("blah.txt")
-  os.write(chunks(0))
-  os.write(chunks(1))
-  os.close
+  val scor = ScorrentParser.Load(new File("/home/ras/ScorrentScapp/scors/file.scor"))
+  var chunks = FileChunker.getChunks(new File("file.txt"))
 }

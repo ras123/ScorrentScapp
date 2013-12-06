@@ -9,19 +9,24 @@ import java.io.{RandomAccessFile, File}
  * Time: 7:36 PM
  * To change this template use File | Settings | File Templates.
  */
-class Chunk(var byteArray : Array[Byte], val offset : Int, val hash : String, var exists : Boolean) {
-  def verifyChunk() {
+class ChunkWriter(val destFile: File) {
+  private var chunksWritten = 0
+
+  def verifyChunk(byteArray: Array[Byte], hash: String) = {
     hash.equals(FileHasher.getDatDankHash(byteArray))
   }
 
   /**
    * Writes the chunk's byte array to the file given its offset. Haven't tested ohohoho
-   * @param destFile
    */
-  def writeChunk(destFile : File) {
+  def writeChunk(byteArray: Array[Byte], offset: Int) {
     val file = new RandomAccessFile(destFile, "rw")
     file.seek(offset * Constants.CHUNKSIZE)
     file.write(byteArray);
     file.close
+
+    chunksWritten += 1
   }
+
+  def chunksWrittenCount = chunksWritten
 }

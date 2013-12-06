@@ -6,28 +6,23 @@ import javax.swing.{UIManager, ImageIcon}
 import scala.swing.GridBagPanel.Fill
 import javax.swing.border.EmptyBorder
 import java.io._
-import scala.xml.{Node, XML}
+import scala.xml.XML
 import scala.concurrent._
 import ExecutionContext.Implicits.global
 import ca.scorrent.scapp.Model._
 import akka.actor.{ActorSystem, ActorLogging, Actor, Props}
-import ca.curls.test.shared.{Chunk, ChunkRequest}
 import ca.scorrent.scapp.Services.{Peers, PeerRequest, CheckIn}
 import com.typesafe.config.ConfigFactory
-import ca.scorrent.scapp.Utils.{ScorrentParser, FileChunker}
+import ca.scorrent.scapp.Utils.{FileHasher, ChunkWriter, ScorrentParser, FileChunker}
 import scala.concurrent.duration._
 import scala.Some
-import scala.swing.event.WindowClosing
 import ca.curls.test.shared.Chunk
-import scala.swing.event.MouseClicked
 import ca.curls.test.shared.ChunkRequest
-import scala.swing.event.ButtonClicked
-
-//import scala.Some
+import scala.collection.mutable.ListBuffer
+import scala.util.Random
 import scala.swing.event.WindowClosing
 import scala.swing.event.MouseClicked
 import scala.swing.event.ButtonClicked
-//import scala.Predef.String
 
 /**
  * Created with IntelliJ IDEA.
@@ -350,10 +345,9 @@ object Main extends SimpleSwingApplication{
             {for (scv <- listStView) yield <Scorrent file={scv.file.getAbsolutePath} uuid={scv.scorrent.uuid} mode={scv.scorrent.status.toString}/>}
           </OpenScorrents>
 
-        // TODO: Disabling this for testing
-        //val writer = new PrintWriter(currentlyOpen)
-        //writer.write(xml.mkString)
-        //writer.close
+        val writer = new PrintWriter(currentlyOpen)
+        writer.write(xml.mkString)
+        writer.close
     }
   }
 
@@ -460,6 +454,15 @@ object Main extends SimpleSwingApplication{
     val tracker = context.actorSelection("akka.tcp://TrackerSystem@localhost:1338/user/Tracker")
     var chunks = Vector[Array[Byte]]()
 
+    // Create a ChunkWriter for storing received chunks
+    val fileName = scView.scorrent.files(0) + "_downloaded"
+    val filePath = UserPrefs.get[File](DownloadDirectory).getAbsolutePath + File.separator + fileName
+    var writer = new ChunkWriter(new File(filePath))
+
+    var corruptedChunks = new ListBuffer[Int]
+    var randomizedChunkIndices = Random.shuffle((0 until scView.scorrent.numOfChunks).toList)
+    println("Done constructing")
+
     def receive = {
       case "start" =>
         println("Received start message")
@@ -469,23 +472,26 @@ object Main extends SimpleSwingApplication{
         println("Received Peers message: " + peers.head)
         // TODO: For now just select the first peer and start receiving chunks from it
         val peer = context.actorSelection(peers.head)
-        peer ! ChunkRequest(0)
+        peer ! ChunkRequest(randomizedChunkIndices.head)
+        randomizedChunkIndices = randomizedChunkIndices.tail
       case Chunk(chunkNumber, chunk) =>
         printf("Received chunk # %d: ", chunkNumber)
         chunk.foreach(c => print(c.toChar))
         println()
-        chunks = chunks :+ chunk
 
-        if (chunkNumber != (scView.scorrent.numOfChunks - 1)) {
-          // Get the next chunk from peer
-          sender ! ChunkRequest(chunkNumber + 1)
+        var hash = FileHasher.getDatDankHash(chunk)
+        if (hash.equals(scView.scorrent.chunkHashes(chunkNumber))) {
+          writer.writeChunk(chunk, chunkNumber)
         } else {
-          val fileName = scView.scorrent.files(0) + "_downloaded"
-          val filePath = UserPrefs.get[File](DownloadDirectory).getAbsolutePath + File.separator + fileName
-          println("Received the last chunk, writing chunks to " + filePath)
-          val os = new FileOutputStream(filePath)
-          chunks.foreach(chunk => os.write(chunk))
-          os.close()
+          // TODO: We should retry or something
+          println("Hash of the received chunk does not match!")
+          corruptedChunks += chunkNumber
+        }
+
+        if (!randomizedChunkIndices.isEmpty) {
+          // Get the next chunk from peer
+          sender ! ChunkRequest(randomizedChunkIndices.head)
+          randomizedChunkIndices = randomizedChunkIndices.tail
         }
     }
   }

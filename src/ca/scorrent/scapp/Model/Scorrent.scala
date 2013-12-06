@@ -14,7 +14,12 @@ import ca.scorrent.scapp.Services.CheckIn
  * Time: 4:40 PM
  * To change this template use File | Settings | File Templates.
  */
-class Scorrent(val name: String, val tracker: String, val uuid: String, val numOfChunks: Integer, val files: Vector[String]) {
+class Scorrent(val name: String,
+               val tracker: String,
+               val uuid: String,
+               val numOfChunks: Integer,
+               val files: Vector[String],
+               val chunkHashes: Vector[String]) {
   var status: ScorrentState = Waiting
 
   def getPercentDone() = {
