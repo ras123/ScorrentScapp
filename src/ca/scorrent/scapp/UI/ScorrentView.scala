@@ -18,7 +18,7 @@ import java.io.File
  * Time: 4:39 PM
  * To change this template use File | Settings | File Templates.
  */
-class ScorrentView(val scorrent: Scorrent, val file: File) extends GridBagPanel{
+class ScorrentView(val scorrent: Scorrent, val file: File) extends GridBagPanel {
   val c = new Constraints
   border = new EmptyBorder(5,10,5,10)
 
@@ -41,12 +41,12 @@ class ScorrentView(val scorrent: Scorrent, val file: File) extends GridBagPanel{
         if(state)
           targetState = Waiting
         else
-          targetState = Working
+          targetState = Downloading
         setMode(targetState)
     }
   }
   var progressBar = new ProgressBar(){
-    max = 1000
+    max = ScorrentView.PROGRESS_BAR_MAX
     value = 0
   }
   val lblName = new Label(scorrent.name)
@@ -135,12 +135,12 @@ class ScorrentView(val scorrent: Scorrent, val file: File) extends GridBagPanel{
 
   def setMode(newState: ScorrentState): Unit = {
     scorrent.changeState(newState) onSuccess {
-      case Working =>
-        ppButton.icon = ScorrentView.playIcon
-        state = true
       case Waiting =>
         ppButton.icon = ScorrentView.pauseIcon
         state = false
+      case Downloading =>
+        ppButton.icon = ScorrentView.playIcon
+        state = true
       case Error => ppButton.icon = ScorrentView.errorIcon
     }
   }
@@ -151,4 +151,5 @@ object ScorrentView{
   val pauseIcon = new ImageIcon("res/small-pause.png")
   val workIcon = new ImageIcon("res/work.png")
   val errorIcon = new ImageIcon("res/error.png")
+  val PROGRESS_BAR_MAX = 1000
 }

@@ -23,6 +23,7 @@ import scala.util.Random
 import scala.swing.event.WindowClosing
 import scala.swing.event.MouseClicked
 import scala.swing.event.ButtonClicked
+import akka.io.Tcp.Close
 
 /**
  * Created with IntelliJ IDEA.
@@ -120,22 +121,30 @@ object Main extends SimpleSwingApplication{
 
   var listStView = List[ScorrentView]()
   val currentlyOpen = new File("current")
-  if(currentlyOpen.exists) {
+  if (currentlyOpen.exists) {
     val root = XML.loadFile(currentlyOpen)
-    for(node <- (root \ "Scorrent")){
+    for (node <- (root \ "Scorrent")) {
       val file = new File(ScorrentParser.getAttribute(node, "file"))
       val fileUuid = (XML.loadFile(file) \ "UUID" head) text;
-      if(fileUuid == ScorrentParser.getAttribute(node, "uuid")) {
+      if (fileUuid == ScorrentParser.getAttribute(node, "uuid")) {
         var state: ScorrentState = Waiting
 
         ScorrentParser.getAttribute(node, "mode") match {
-          case "Seeding" => state = Seeding
           case "Waiting" => state = Waiting
-          case "Working" => state = Working
+          case "Downloading" => state = Downloading
+          case "Seeding" => state = Seeding
           case unknown => throw new Exception("Unknown state: " + unknown)
         }
 
-        loadFile(file, state)
+        val chunksMissingStr = ScorrentParser.getAttribute(node, "chunksMissing")
+        printf("Missing chunks (%d) %s\n", chunksMissingStr.length, chunksMissingStr)
+        var chunksMissing: List[Int] = Nil
+        if (chunksMissingStr.length != 0) {
+          chunksMissing = chunksMissingStr.split(',').map(idxStr => idxStr.toInt).toList
+        }
+
+        // TODO: Test when there are no missing chunks
+        loadFile(file, state, chunksMissing)
       }
       else {
         Dialog.showMessage(message = "UUID of "+file.getAbsolutePath+" is altered.", title = "Error opening", icon = UIManager.getIcon("OptionPane.errorIcon"))
@@ -143,6 +152,8 @@ object Main extends SimpleSwingApplication{
     }
   }
 
+  // TODO: Remove, using this to bypass GUI
+  //loadFile(new File("/home/ras/ScorrentScapp/scors/file.scor"))
   updateList()
 
   def top = new MainFrame{
@@ -228,7 +239,7 @@ object Main extends SimpleSwingApplication{
                 } onSuccess {
                   case _ =>
                       for(scv <- listStView){
-                        scv.setMode(Working)
+                        scv.setMode(Downloading)
                       }
                 }
             }
@@ -342,7 +353,8 @@ object Main extends SimpleSwingApplication{
       case WindowClosing(_) =>
         val xml =
           <OpenScorrents>
-            {for (scv <- listStView) yield <Scorrent file={scv.file.getAbsolutePath} uuid={scv.scorrent.uuid} mode={scv.scorrent.status.toString}/>}
+            {for (scv <- listStView) yield <Scorrent file={scv.file.getAbsolutePath} uuid={scv.scorrent.uuid} mode={scv.scorrent.status.toString}
+            chunksMissing={scv.scorrent.getMissingChunks()._2}/>}
           </OpenScorrents>
 
         val writer = new PrintWriter(currentlyOpen)
@@ -369,9 +381,8 @@ object Main extends SimpleSwingApplication{
     }
   }
 
-  def loadFile(ofile: File, state: ScorrentState = Waiting) = {
+  def loadFile(ofile: File, state: ScorrentState = Waiting, chunksMissing: List[Int] = Nil) = {
     println("Loading file: " + ofile.getAbsolutePath)
-    //println("State: " + state.toString)
     var file = ofile
     if(UserPrefs.get[Boolean](Backup) && !file.getAbsolutePath.contains(UserPrefs.get[File](ScorDirectory).getAbsolutePath)) {
       val newFile = new File(UserPrefs.get[File](ScorDirectory).getAbsolutePath + File.separator + file.getName)
@@ -381,30 +392,28 @@ object Main extends SimpleSwingApplication{
       val os = new FileOutputStream(newFile)
       var length:Int = -1
 
-      do{
+      do {
         length = is.read(buffer)
-        if(length != -1)
+        if (length != -1)
           os.write(buffer, 0, length)
-      }while(length != -1)
+      } while (length != -1)
 
       is.close()
       os.close()
       file = newFile
     }
-    val scor = ScorrentParser.Load(file)
-    //println("File name: " + scor.files(0))
+    val scor = ScorrentParser.Load(file, chunksMissing)
     if(scor != null) {
       if(listStView.foldLeft(false)(
           (current, scv) =>
             current || scv.scorrent.uuid == scor.uuid)) {
-        println("If case")
         Dialog.showMessage(message = "Scorrent "+scor.name+" is already added to the list", title = "Error opening", icon = UIManager.getIcon("OptionPane.errorIcon"))
       }
       else {
         var scView = new ScorrentView(scor, file)
         scView.setMode(state)
         if (state == Seeding) {
-          scView.progressBar.value = 1000
+          scView.progressBar.value = ScorrentView.PROGRESS_BAR_MAX
           startSeeding(scView)
         } else {
           startDownloading(scView)
@@ -452,46 +461,61 @@ object Main extends SimpleSwingApplication{
     println("PeerDownload: downloading " + scView.scorrent.numOfChunks + " chunks.")
     // TODO: Use the tracker from .scor file
     val tracker = context.actorSelection("akka.tcp://TrackerSystem@localhost:1338/user/Tracker")
-    var chunks = Vector[Array[Byte]]()
+
+    val sc = scView.scorrent
+    var corruptedChunks = new ListBuffer[Int]
+    val chunksDownloaded = sc.numOfChunks - sc.getMissingChunks()._1
 
     // Create a ChunkWriter for storing received chunks
     val fileName = scView.scorrent.files(0) + "_downloaded"
     val filePath = UserPrefs.get[File](DownloadDirectory).getAbsolutePath + File.separator + fileName
-    var writer = new ChunkWriter(new File(filePath))
-
-    var corruptedChunks = new ListBuffer[Int]
-    var randomizedChunkIndices = Random.shuffle((0 until scView.scorrent.numOfChunks).toList)
-    println("Done constructing")
+    var writer = new ChunkWriter(new File(filePath), chunksDownloaded)
 
     def receive = {
       case "start" =>
         println("Received start message")
+        scView.progressBar.value = ScorrentView.PROGRESS_BAR_MAX * chunksDownloaded / sc.numOfChunks
         // Request a list of peers from the tracker
         tracker ! PeerRequest
       case Peers(peers) =>
-        println("Received Peers message: " + peers.head)
-        // TODO: For now just select the first peer and start receiving chunks from it
-        val peer = context.actorSelection(peers.head)
-        peer ! ChunkRequest(randomizedChunkIndices.head)
-        randomizedChunkIndices = randomizedChunkIndices.tail
+        // TODO: Need some kind of retry, also we should periodically check for new peers and handle peers leaving
+        if (peers.length != 0) {
+          println("Received Peers message: " + peers.head)
+          scView.setMode(Downloading)
+          // TODO: For now just select the first peer and start receiving chunks from it
+          val peer = context.actorSelection(peers.head)
+          peer ! ChunkRequest(sc.getChunkIdx)
+        }
       case Chunk(chunkNumber, chunk) =>
         printf("Received chunk # %d: ", chunkNumber)
         chunk.foreach(c => print(c.toChar))
         println()
 
         var hash = FileHasher.getDatDankHash(chunk)
-        if (hash.equals(scView.scorrent.chunkHashes(chunkNumber))) {
+        if (hash.equals(sc.chunkHashes(chunkNumber))) {
           writer.writeChunk(chunk, chunkNumber)
+          if (writer.chunksWritten % 5 == 0) {
+
+            scView.progressBar.value = ScorrentView.PROGRESS_BAR_MAX * writer.chunksWritten / sc.numOfChunks
+          }
         } else {
           // TODO: We should retry or something
           println("Hash of the received chunk does not match!")
           corruptedChunks += chunkNumber
         }
 
-        if (!randomizedChunkIndices.isEmpty) {
+        // TODO: Remove eventually
+        Thread.sleep(500)
+        val chunkIdx = sc.getChunkIdx()
+        if (chunkIdx != -1) {
           // Get the next chunk from peer
-          sender ! ChunkRequest(randomizedChunkIndices.head)
-          randomizedChunkIndices = randomizedChunkIndices.tail
+          sender ! ChunkRequest(chunkIdx)
+        } else if (corruptedChunks.isEmpty) {
+          // Successfully received all file chunks
+          println("Download finished!")
+          scView.setMode(Seeding)
+          scView.progressBar.value = ScorrentView.PROGRESS_BAR_MAX
+          sender ! Close
         }
     }
   }

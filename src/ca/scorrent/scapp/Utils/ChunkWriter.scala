@@ -9,8 +9,7 @@ import java.io.{RandomAccessFile, File}
  * Time: 7:36 PM
  * To change this template use File | Settings | File Templates.
  */
-class ChunkWriter(val destFile: File) {
-  private var chunksWritten = 0
+class ChunkWriter(val destFile: File, var chunksWritten: Int) {
 
   def verifyChunk(byteArray: Array[Byte], hash: String) = {
     hash.equals(FileHasher.getDatDankHash(byteArray))
@@ -27,6 +26,4 @@ class ChunkWriter(val destFile: File) {
 
     chunksWritten += 1
   }
-
-  def chunksWrittenCount = chunksWritten
 }

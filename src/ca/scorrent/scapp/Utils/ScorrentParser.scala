@@ -2,7 +2,7 @@ package ca.scorrent.scapp.Utils
 
 import java.io.File
 import scala.xml._
-import ca.scorrent.scapp.Model.Scorrent
+import ca.scorrent.scapp.Model.{Waiting, ScorrentState, Scorrent}
 import scala.swing.Dialog
 import javax.swing.UIManager
 import scala.util.Random
@@ -37,7 +37,7 @@ object ScorrentParser {
     }
   }
 
-  def Load(file: File): Scorrent = {
+  def Load(file: File, chunksMissing: List[Int] = Nil): Scorrent = {
     try{
       val root = XML.loadFile(file)
 
@@ -58,7 +58,7 @@ object ScorrentParser {
         chunkHashes = chunkHashes :+ getAttribute(hash, "hash")
       }
 
-      new Scorrent(name, tracker, uuid, numOfChunks.toInt, files, chunkHashes)
+      new Scorrent(name, tracker, uuid, numOfChunks.toInt, files, chunkHashes, chunksMissing)
     }
     catch{
       case ex: Throwable => //TODO Should probably change this up, was a just a lazy thing
@@ -107,6 +107,15 @@ object ScorrentParser {
 
 // This is just for local testing
 object ScorrentParserDriver extends App {
-  val scor = ScorrentParser.Load(new File("/home/ras/ScorrentScapp/scors/file.scor"))
-  var chunks = FileChunker.getChunks(new File("file.txt"))
+//  val scor = ScorrentParser.Load(new File("/home/ras/ScorrentScapp/scors/file.scor"))
+//  var chunks = FileChunker.getChunks(new File("file.txt"))
+
+  val currentlyOpen = new File("current")
+  val root = XML.loadFile(currentlyOpen)
+  for (node <- (root \ "Scorrent")) {
+    val chunksMissing = ScorrentParser.getAttribute(node, "chunksMissing")
+    //println("Chunks: " + chunksMissing)
+    var array = chunksMissing.split(',')
+    array.foreach(idx => println("Idx: " + idx))
+  }
 }
