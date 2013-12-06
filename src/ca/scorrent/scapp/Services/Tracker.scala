@@ -3,6 +3,7 @@ package ca.scorrent.scapp.Services
 import akka.actor.{Props, ActorSystem, ActorRef, Actor}
 import scala.collection.immutable.HashMap
 import com.typesafe.config.ConfigFactory
+import scala.concurrent.duration._
 
 /**
  * Created with IntelliJ IDEA.
@@ -39,6 +40,7 @@ class Tracker extends Actor{
     case PeerRequest =>
       sender ! Peers(peers.keys.toList.map( (ref) => {ref.path}))
     case Prune =>
+      println("Pruning..")
       peers = peers.filter(
         (pair) => {
           pair._2 > System.currentTimeMillis()-(HeartBeat.Rate*2000)
@@ -65,4 +67,8 @@ object TrackerDriver extends App {
     }
   """))
   val tracker = system.actorOf(Props[Tracker], name = "Tracker")
+
+  import system.dispatcher
+
+  system.scheduler.schedule(0 milliseconds, HeartBeat.Rate*2 seconds, tracker, Prune)
 }

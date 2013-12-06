@@ -8,5 +8,5 @@ package ca.scorrent.scapp.Utils
  * To change this template use File | Settings | File Templates.
  */
 object Constants {
-  val CHUNKSIZE = 256
+  val CHUNKSIZE = 10
 }

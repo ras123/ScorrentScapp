@@ -3,6 +3,9 @@ package ca.scorrent.scapp.Model
 import scala.concurrent._
 import ExecutionContext.Implicits.global
 import ca.curls.test._
+import akka.actor.{ActorLogging, Actor, Props}
+import ca.curls.test.shared.{Chunk, ChunkRequest}
+import ca.scorrent.scapp.Services.CheckIn
 
 /**
  * Created with IntelliJ IDEA.
@@ -11,7 +14,7 @@ import ca.curls.test._
  * Time: 4:40 PM
  * To change this template use File | Settings | File Templates.
  */
-class Scorrent(val name: String, val tracker: String, val uuid: String) {
+class Scorrent(val name: String, val tracker: String, val uuid: String, val numOfChunks: Integer, val files: Vector[String]) {
   var status: ScorrentState = Waiting
 
   def getPercentDone() = {
@@ -25,6 +28,8 @@ class Scorrent(val name: String, val tracker: String, val uuid: String) {
         //throw error
       else
         newState match {
+          case Seeding =>
+            status = Seeding
           case Waiting =>
             //close connection
             status = Waiting

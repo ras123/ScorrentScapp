@@ -18,6 +18,8 @@ import ExecutionContext.Implicits.global
 import akka.actor.ActorSystem
 import com.typesafe.config.{ConfigFactory, Config}
 import ca.scorrent.scapp.Services.Register
+import ca.scorrent.scapp.Model.Seeding
+import ca.scorrent.scapp.Utils.ScorrentParser
 
 /**
  * Created with IntelliJ IDEA.
@@ -127,7 +129,9 @@ class CreateDialog extends Dialog{
                         val test = fc.selectedFile
                         val xml = ScorrentParser.Build(teName.text, teTracker.text, files)
 
-                        register(teTracker.text, (xml \\ "UUID" head) text)
+                        println("Selected file: " + fc.selectedFile)
+                        // TODO: Disabling the TrackerServer for now
+                        //register(teTracker.text, (xml \\ "UUID" head) text)
 
                         val writer = new PrintWriter(fc.selectedFile)
                         writer.write(xml.mkString)
@@ -135,7 +139,7 @@ class CreateDialog extends Dialog{
                       }
                       f onSuccess {
                         case _ =>
-                          Main.loadFile(fc.selectedFile)
+                          Main.loadFile(fc.selectedFile, Seeding)
                           Main.updateList()
                       }
                       f onFailure {
@@ -242,7 +246,8 @@ class CreateDialog extends Dialog{
         }
     }
     """))
-    system.actorSelection("akka.tcp://Tracker@"+tracker+"/user/Manager") ! Register(uuid)
+    println("Sending 'Register' msg to tracker manager.")
+    system.actorSelection("akka.tcp://TrackerSystem@"+tracker+"/user/Manager") ! Register(uuid)
   }
 }
 

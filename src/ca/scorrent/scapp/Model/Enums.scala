@@ -17,6 +17,7 @@ object FilterMask{
 }
 
 sealed trait ScorrentState
+case object Seeding extends ScorrentState
 case object Working extends ScorrentState
 case object Waiting extends ScorrentState
 case object Error extends ScorrentState

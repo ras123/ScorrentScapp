@@ -1,16 +1,10 @@
 package ca.scorrent.scapp.Services
 
-import akka.actor.{ActorRef, ActorSystem, Actor, Props}
-import com.typesafe.config.ConfigFactory
-import akka.remote._
-import akka.remote.RemoteActorRefProvider
+import akka.actor.ActorRef
 import akka.actor.{ActorSystem, Actor, Props}
 import com.typesafe.config.ConfigFactory
-import ca.curls.test.shared.{ChunkRequest, Echo, Chunk}
-import java.io.{PrintWriter, BufferedWriter, File}
-import com.google.common.io.Files
-import java.nio.charset.Charset
 import scala.concurrent.duration._
+import scala.concurrent.ExecutionContext.Implicits.global
 
 /**
  * Created with IntelliJ IDEA.
@@ -20,7 +14,7 @@ import scala.concurrent.duration._
  * To change this template use File | Settings | File Templates.
  */
 object TrackerServer extends App{
-  val system = ActorSystem("HelloRemoteSystem", ConfigFactory.parseString("""
+  val system = ActorSystem("TrackerSystem", ConfigFactory.parseString("""
     akka {
        actor {
            provider = "akka.remote.RemoteActorRefProvider"
@@ -59,7 +53,8 @@ class Manager(system: ActorSystem) extends Actor{
       //fuck saving things
       context stop self
     case Register(uuid: String) =>
-      val newActor = system.actorOf(Props[Tracker], name = uuid)
+      println("Registering tracker: " + uuid)
+      val newActor = system.actorOf(Props[Tracker], "Tracker")
       ScorTrackers = ScorTrackers :+ newActor
       system.scheduler.schedule(0 milliseconds, HeartBeat.Rate*2 seconds, newActor, Prune)
   }

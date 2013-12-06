@@ -1,21 +1,33 @@
 package ca.scorrent.scapp.UI
 
 import scala.swing._
-import scala.swing.event._
 import scala.swing.event.Key.Modifier
-import javax.swing.{UIManager, JFileChooser, ImageIcon}
+import javax.swing.{UIManager, ImageIcon}
 import scala.swing.GridBagPanel.Fill
-import javax.swing.border.{EmptyBorder, LineBorder}
+import javax.swing.border.EmptyBorder
 import java.io._
-import java.security.MessageDigest
-import scala.io.Source
 import scala.xml.{Node, XML}
 import scala.concurrent._
 import ExecutionContext.Implicits.global
-import scala.Some
 import ca.scorrent.scapp.Model._
+import akka.actor.{ActorSystem, ActorLogging, Actor, Props}
+import ca.curls.test.shared.{Chunk, ChunkRequest}
+import ca.scorrent.scapp.Services.{Peers, PeerRequest, CheckIn}
+import com.typesafe.config.ConfigFactory
+import ca.scorrent.scapp.Utils.{ScorrentParser, FileChunker}
+import scala.concurrent.duration._
+import scala.Some
+import scala.swing.event.WindowClosing
+import ca.curls.test.shared.Chunk
+import scala.swing.event.MouseClicked
+import ca.curls.test.shared.ChunkRequest
+import scala.swing.event.ButtonClicked
+
+//import scala.Some
+import scala.swing.event.WindowClosing
 import scala.swing.event.MouseClicked
 import scala.swing.event.ButtonClicked
+//import scala.Predef.String
 
 /**
  * Created with IntelliJ IDEA.
@@ -113,25 +125,30 @@ object Main extends SimpleSwingApplication{
 
   var listStView = List[ScorrentView]()
   val currentlyOpen = new File("current")
-  val f = future{
-    if(currentlyOpen.exists){
-      val root = XML.loadFile(currentlyOpen)
-      for(node <- (root \ "Scorrent")){
-        val file = new File(getAttribute(node, "file"))
-        val fileUuid = (XML.loadFile(file) \ "UUID" head) text;
-        if(fileUuid == getAttribute(node, "uuid")){
-          loadFile(file)
-          val scv = (listStView last)
-          scv.setMode(if(getAttribute(node, "mode") == "Waiting") Waiting else Working)
+  if(currentlyOpen.exists) {
+    val root = XML.loadFile(currentlyOpen)
+    for(node <- (root \ "Scorrent")){
+      val file = new File(ScorrentParser.getAttribute(node, "file"))
+      val fileUuid = (XML.loadFile(file) \ "UUID" head) text;
+      if(fileUuid == ScorrentParser.getAttribute(node, "uuid")) {
+        var state: ScorrentState = Waiting
+
+        ScorrentParser.getAttribute(node, "mode") match {
+          case "Seeding" => state = Seeding
+          case "Waiting" => state = Waiting
+          case "Working" => state = Working
+          case unknown => throw new Exception("Unknown state: " + unknown)
         }
-        else{
-          Dialog.showMessage(message = "UUID of "+file.getAbsolutePath+" is altered.", title = "Error opening", icon = UIManager.getIcon("OptionPane.errorIcon"))
-        }
+
+        loadFile(file, state)
+      }
+      else {
+        Dialog.showMessage(message = "UUID of "+file.getAbsolutePath+" is altered.", title = "Error opening", icon = UIManager.getIcon("OptionPane.errorIcon"))
       }
     }
-
-    updateList()
   }
+
+  updateList()
 
   def top = new MainFrame{
     title = "Scorrent Scapp"
@@ -330,12 +347,13 @@ object Main extends SimpleSwingApplication{
       case WindowClosing(_) =>
         val xml =
           <OpenScorrents>
-            {for (scv <- listStView) yield <Scorrent file={scv.file.getAbsolutePath} uuid={scv.scorrent.uuid} mode={if (scv.state) "Working" else "Waiting"}/>}
+            {for (scv <- listStView) yield <Scorrent file={scv.file.getAbsolutePath} uuid={scv.scorrent.uuid} mode={scv.scorrent.status.toString}/>}
           </OpenScorrents>
 
-        val writer = new PrintWriter(currentlyOpen)
-        writer.write(xml.mkString)
-        writer.close
+        // TODO: Disabling this for testing
+        //val writer = new PrintWriter(currentlyOpen)
+        //writer.write(xml.mkString)
+        //writer.close
     }
   }
 
@@ -357,9 +375,11 @@ object Main extends SimpleSwingApplication{
     }
   }
 
-  def loadFile(ofile: File) = {
+  def loadFile(ofile: File, state: ScorrentState = Waiting) = {
+    println("Loading file: " + ofile.getAbsolutePath)
+    //println("State: " + state.toString)
     var file = ofile
-    if(UserPrefs.get[Boolean](Backup) && !file.getAbsolutePath.contains(UserPrefs.get[File](ScorDirectory).getAbsolutePath)){
+    if(UserPrefs.get[Boolean](Backup) && !file.getAbsolutePath.contains(UserPrefs.get[File](ScorDirectory).getAbsolutePath)) {
       val newFile = new File(UserPrefs.get[File](ScorDirectory).getAbsolutePath + File.separator + file.getName)
 
       var buffer: Array[Byte] = new Array[Byte](4096) // fuck you arbitrary values are great
@@ -378,24 +398,27 @@ object Main extends SimpleSwingApplication{
       file = newFile
     }
     val scor = ScorrentParser.Load(file)
-    if(scor != null){
+    //println("File name: " + scor.files(0))
+    if(scor != null) {
       if(listStView.foldLeft(false)(
           (current, scv) =>
-            current || scv.scorrent.uuid == scor.uuid)){
+            current || scv.scorrent.uuid == scor.uuid)) {
+        println("If case")
         Dialog.showMessage(message = "Scorrent "+scor.name+" is already added to the list", title = "Error opening", icon = UIManager.getIcon("OptionPane.errorIcon"))
       }
-      else{
-        listStView = listStView :+ new ScorrentView(scor, file)
+      else {
+        var scView = new ScorrentView(scor, file)
+        scView.setMode(state)
+        if (state == Seeding) {
+          scView.progressBar.value = 1000
+          startSeeding(scView)
+        } else {
+          startDownloading(scView)
+        }
+        listStView = listStView :+ scView
       }
-    }
-  }
-
-  def getAttribute(node: Node, key: String) = {
-    node.attribute(key) match {
-      case Some(s) =>
-        s.head.text
-      case None =>
-        throw new Exception("Error parsing. Key not found: "+key)
+    } else {
+      println("NULL")
     }
   }
 
@@ -416,12 +439,121 @@ object Main extends SimpleSwingApplication{
     future {
       val xml =
         <OpenScorrents>
-          {for(scv <- listStView) yield <Scorrent file={scv.file.getAbsolutePath} uuid={scv.scorrent.uuid} mode={if(scv.state) "Working" else "Waiting"}/>}
+          {for(scv <- listStView) yield <Scorrent file={scv.file.getAbsolutePath} uuid={scv.scorrent.uuid} mode={scv.scorrent.status.toString}/>}
         </OpenScorrents>
 
       val writer = new PrintWriter(currentlyOpen)
       writer.write(xml.mkString)
       writer.close
     }
+  }
+
+  // Upload & Download functionality
+  object PeerDownload {
+    def props(scView: ScorrentView) =
+      Props(classOf[PeerDownload], scView)
+  }
+
+  class PeerDownload(scView: ScorrentView) extends Actor {
+    println("PeerDownload: downloading " + scView.scorrent.numOfChunks + " chunks.")
+    // TODO: Use the tracker from .scor file
+    val tracker = context.actorSelection("akka.tcp://TrackerSystem@localhost:1338/user/Tracker")
+    var chunks = Vector[Array[Byte]]()
+
+    def receive = {
+      case "start" =>
+        println("Received start message")
+        // Request a list of peers from the tracker
+        tracker ! PeerRequest
+      case Peers(peers) =>
+        println("Received Peers message: " + peers.head)
+        // TODO: For now just select the first peer and start receiving chunks from it
+        val peer = context.actorSelection(peers.head)
+        peer ! ChunkRequest(0)
+      case Chunk(chunkNumber, chunk) =>
+        printf("Received chunk # %d: ", chunkNumber)
+        chunk.foreach(c => print(c.toChar))
+        println()
+        chunks = chunks :+ chunk
+
+        if (chunkNumber != (scView.scorrent.numOfChunks - 1)) {
+          // Get the next chunk from peer
+          sender ! ChunkRequest(chunkNumber + 1)
+        } else {
+          val fileName = scView.scorrent.files(0) + "_downloaded"
+          val filePath = UserPrefs.get[File](DownloadDirectory).getAbsolutePath + File.separator + fileName
+          println("Received the last chunk, writing chunks to " + filePath)
+          val os = new FileOutputStream(filePath)
+          chunks.foreach(chunk => os.write(chunk))
+          os.close()
+        }
+    }
+  }
+
+  def startDownloading(scView: ScorrentView) = {
+    println("Starting downloading")
+    implicit val system = ActorSystem("Peer", ConfigFactory.parseString(
+      """
+      akka {
+        actor {
+          provider = "akka.remote.RemoteActorRefProvider"
+        }
+        remote {
+           transport = "akka.remote.netty.NettyRemoteTransport"
+           netty.tcp {
+             hostname = "localhost"
+             port = 0
+           }
+         }
+      }
+      """))
+
+    val peer = system.actorOf(PeerDownload.props(scView), name = "Peer")
+    system.scheduler.schedule(FiniteDuration(0L, SECONDS), FiniteDuration(15L, SECONDS), peer, "checkin")
+    peer ! "start"
+  }
+
+  object PeerUpload {
+    def props(scView: ScorrentView, chunks: Vector[Array[Byte]]) =
+      Props(classOf[PeerUpload], scView, chunks)
+  }
+
+  class PeerUpload(scView: ScorrentView, chunks: Vector[Array[Byte]]) extends Actor with ActorLogging {
+    // TODO: Use the tracker from .scor file
+    val tracker = context.actorSelection("akka.tcp://TrackerSystem@localhost:1338/user/Tracker")
+
+    def receive: Actor.Receive = {
+      case ChunkRequest(chunkNumber) =>
+        sender ! Chunk(chunkNumber, chunks(chunkNumber))
+      case "checkin" =>
+        // This tells the peer to checkin with the Tracker
+        tracker ! CheckIn
+    }
+  }
+
+  def startSeeding(scView: ScorrentView) = {
+    println("Starting uploading")
+    implicit val system = ActorSystem("Peer", ConfigFactory.parseString(
+      """
+      akka {
+        actor {
+          provider = "akka.remote.RemoteActorRefProvider"
+        }
+        remote {
+           transport = "akka.remote.netty.NettyRemoteTransport"
+           netty.tcp {
+             hostname = "localhost"
+             port = 0
+           }
+         }
+      }
+      """))
+
+    val fileName = scView.scorrent.files(0)
+    var filePath = UserPrefs.get[File](DownloadDirectory).getAbsolutePath + File.separator + fileName
+    val file = new File(filePath)
+
+    val seed = system.actorOf(PeerUpload.props(scView, FileChunker.getChunks(file)), "Seed")
+    system.scheduler.schedule(FiniteDuration(0L, SECONDS), FiniteDuration(15L, SECONDS), seed, "checkin")
   }
 }

@@ -45,9 +45,9 @@ class ScorrentView(val scorrent: Scorrent, val file: File) extends GridBagPanel{
         setMode(targetState)
     }
   }
-  val progressBar = new ProgressBar(){
+  var progressBar = new ProgressBar(){
     max = 1000
-    value = 450
+    value = 0
   }
   val lblName = new Label(scorrent.name)
 

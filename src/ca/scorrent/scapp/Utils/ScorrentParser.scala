@@ -1,12 +1,14 @@
-package ca.scorrent.scapp.UI
-import java.io.File
+package ca.scorrent.scapp.Utils
+
+import java.io.{FileOutputStream, File}
 import java.security.MessageDigest
 import sun.misc.BASE64Encoder
 import scala.xml._
 import ca.scorrent.scapp.Model.Scorrent
 import scala.swing.Dialog
 import javax.swing.UIManager
-import ca.scorrent.scapp.Utils.{FileChunker, FileHasher}
+import ca.scorrent.scapp.Utils.{FileChunker, FileHasher, Constants}
+import java.util
 
 /**
  * Created with IntelliJ IDEA.
@@ -21,11 +23,20 @@ object ScorrentParser {
       <Name>{name}</Name>
       <UUID>{FileHasher.getDatDankHashForNewFileName(name.getBytes)}</UUID>
       <Tracker>{tracker}</Tracker>
-      <ChunkSize>4096</ChunkSize>{/*TODO Get some Kit Kat up in here */ }
+      <ChunkSize>{Constants.CHUNKSIZE}</ChunkSize>{/*TODO Get some Kit Kat up in here */ }
       <Files>
         {for(f <- files) yield createXMLFile(f)}
       </Files>
     </Scorrent>
+  }
+
+  def getAttribute(node: Node, key: String) = {
+    node.attribute(key) match {
+      case Some(s) =>
+        s.head.text
+      case None =>
+        throw new Exception("Error parsing. Key not found: "+key)
+    }
   }
 
   def Load(file: File): Scorrent = {
@@ -37,8 +48,14 @@ object ScorrentParser {
       val uuid = (root \\ "UUID" head) text
 
       //TODO Actually load the scorrent in, just not a fraction of thigns
+      val numOfChunks = (root \\ "NumOfChunks" head) text
+      var files = Vector[String]()
+      for(fileNode <- (root \\ "File")) {
+        var fileName = getAttribute(fileNode, "name")
+        files =  files :+ fileName
+      }
 
-      new Scorrent(name, tracker, uuid)
+      new Scorrent(name, tracker, uuid, numOfChunks.toInt, files)
     }
     catch{
       case ex: Throwable => //TODO Should probably change this up, was a just a lazy thing
@@ -84,4 +101,22 @@ object ScorrentParser {
     println(test)
     test
   }
+}
+
+// This is just for local testing
+object ScorrentParserDriver extends App {
+  /*val scor = ScorrentParser.Load(new File("/home/ras/ScorrentScapp/scors/file.scor"))
+  println("Name: " + scor.name)
+  println("Chunks: " + scor.numOfChunks)*/
+
+  var chunks = Vector[Array[Byte]]()
+  chunks = chunks :+ "Hello ".getBytes
+  chunks = chunks :+ "there".getBytes
+
+  //println("Size of data: " + data.size)
+
+  val os = new FileOutputStream("blah.txt")
+  os.write(chunks(0))
+  os.write(chunks(1))
+  os.close
 }

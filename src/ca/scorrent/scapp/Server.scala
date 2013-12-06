@@ -63,11 +63,5 @@ object ServerDriver extends App {
     }
   """))
   val server = system.actorOf(Props[Server], name = "Server")
-
-  /*val chunkCount = 2
-  for (i <- 0 until chunkCount) {
-    println("Server requesting chunk # " + i)
-    server ! i
-  }*/
 }
 
