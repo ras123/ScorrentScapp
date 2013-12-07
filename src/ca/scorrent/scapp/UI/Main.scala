@@ -11,20 +11,28 @@ import scala.concurrent._
 import ExecutionContext.Implicits.global
 import ca.scorrent.scapp.Model._
 import akka.actor._
-import ca.scorrent.scapp.Services.{PeerRequest, CheckIn}
+import ca.scorrent.scapp.Services._
 import com.typesafe.config.ConfigFactory
 import ca.scorrent.scapp.Utils.{FileHasher, ChunkWriter, ScorrentParser, FileChunker}
 import scala.concurrent.duration._
 import scala.collection.mutable.ListBuffer
 import akka.io.Tcp.Close
-import ca.scorrent.scapp.Services.Peers
-import ca.scorrent.scapp.Services.HeartBeat
 import scala.Some
 import scala.swing.event.WindowClosing
 import ca.curls.test.shared.Chunk
 import scala.swing.event.MouseClicked
 import ca.curls.test.shared.ChunkRequest
 import scala.swing.event.ButtonClicked
+import ca.scorrent.scapp.Services.Peers
+import scala.Some
+import scala.swing.event.WindowClosing
+import ca.curls.test.shared.Chunk
+import scala.swing.event.MouseClicked
+import ca.curls.test.shared.ChunkRequest
+import scala.swing.event.ButtonClicked
+import ca.scorrent.scapp.Services.PeerRequest
+import akka.actor.Terminated
+import ca.scorrent.scapp.Services.CheckIn
 
 /**
  * Created with IntelliJ IDEA.
@@ -476,10 +484,14 @@ object Main extends SimpleSwingApplication{
     scView.progressBar.value = ScorrentView.PROGRESS_BAR_MAX * chunksDownloaded / sc.numOfChunks
 
     def receive = {
+      case "start" =>
+        // Register in the swarm
+        tracker ! Register(sc.uuid)
+        tracker ! PeerRequest(sc.uuid)
       case "getpeers" =>
         println("Asking tracker for peers")
         // Request a list of peers from the tracker
-        tracker ! PeerRequest
+        tracker ! PeerRequest(sc.uuid)
       case Peers(peers) =>
         if (peers.length != 0 && sc.peers.size == 0) {
           println("Received Peers message: " + peers)
@@ -512,7 +524,7 @@ object Main extends SimpleSwingApplication{
         }
 
         // TODO: Remove eventually
-        Thread.sleep(500)
+        //Thread.sleep(500)
         val chunkIdx = sc.nextChunkIdx
         if (chunkIdx != -1) {
           // Get the next chunk from peer
@@ -525,8 +537,8 @@ object Main extends SimpleSwingApplication{
           sender ! Close
         }
       case "checkin" =>
-        // This tells the peer to checkin with the Tracker
-        tracker ! CheckIn
+        // Ping the tracker to let it know we're alive
+        tracker ! CheckIn(sc.uuid)
       case Terminated(peer) =>
         println("Peer terminated connection: " + peer)
         // Unregister peer that closed the connection
@@ -558,8 +570,10 @@ object Main extends SimpleSwingApplication{
       """))
 
     val peer = system.actorOf(PeerDownload.props(scView), name = "Peer")
-    system.scheduler.schedule(FiniteDuration(0L, SECONDS), FiniteDuration(HeartBeat.Rate, SECONDS), peer, "checkin")
-    system.scheduler.schedule(FiniteDuration(0L, SECONDS), FiniteDuration(25L, SECONDS), peer, "getpeers")
+    system.scheduler.schedule(FiniteDuration(HeartBeat.Rate, SECONDS), FiniteDuration(HeartBeat.Rate, SECONDS), peer, "checkin")
+    system.scheduler.schedule(FiniteDuration(HeartBeat.Rate, SECONDS), FiniteDuration(HeartBeat.Rate, SECONDS), peer, "getpeers")
+
+    peer ! "start"
   }
 
   object PeerUpload {
@@ -573,6 +587,9 @@ object Main extends SimpleSwingApplication{
     val sc = scView.scorrent
 
     def receive: Actor.Receive = {
+      case "start" =>
+        // Register in the swarm
+        tracker ! Register(sc.uuid)
       case ChunkRequest(chunkNumber) =>
         sender ! Chunk(chunkNumber, chunks(chunkNumber))
       case "handshake" =>
@@ -580,7 +597,7 @@ object Main extends SimpleSwingApplication{
         sender ! "handshake"
       case "checkin" =>
         // This tells the peer to checkin with the Tracker
-        tracker ! CheckIn
+        tracker ! CheckIn(sc.uuid)
     }
   }
 
@@ -602,11 +619,14 @@ object Main extends SimpleSwingApplication{
       }
       """))
 
+    // Open the file to be seeded and split it into chunks
     val fileName = scView.scorrent.files(0)
     var filePath = UserPrefs.get[File](DownloadDirectory).getAbsolutePath + File.separator + fileName
     val file = new File(filePath)
-
     val seed = system.actorOf(PeerUpload.props(scView, FileChunker.getChunks(file)), "Seed")
-    system.scheduler.schedule(FiniteDuration(0L, SECONDS), FiniteDuration(HeartBeat.Rate, SECONDS), seed, "checkin")
+
+    system.scheduler.schedule(FiniteDuration(HeartBeat.Rate, SECONDS), FiniteDuration(HeartBeat.Rate, SECONDS), seed, "checkin")
+
+    seed ! "start"
   }
 }

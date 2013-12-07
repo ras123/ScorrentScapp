@@ -110,12 +110,14 @@ object ScorrentParserDriver extends App {
 //  val scor = ScorrentParser.Load(new File("/home/ras/ScorrentScapp/scors/file.scor"))
 //  var chunks = FileChunker.getChunks(new File("file.txt"))
 
-  val currentlyOpen = new File("current")
+  /*val currentlyOpen = new File("current")
   val root = XML.loadFile(currentlyOpen)
   for (node <- (root \ "Scorrent")) {
     val chunksMissing = ScorrentParser.getAttribute(node, "chunksMissing")
     //println("Chunks: " + chunksMissing)
     var array = chunksMissing.split(',')
     array.foreach(idx => println("Idx: " + idx))
-  }
+  }*/
+
+
 }
