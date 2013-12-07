@@ -37,7 +37,7 @@ object ScorrentParser {
     }
   }
 
-  def Load(file: File, chunksMissing: List[Int] = Nil): Scorrent = {
+  def Load(file: File, state: ScorrentState, chunksMissing: List[Int] = Nil): Scorrent = {
     try{
       val root = XML.loadFile(file)
 
@@ -58,7 +58,7 @@ object ScorrentParser {
         chunkHashes = chunkHashes :+ getAttribute(hash, "hash")
       }
 
-      new Scorrent(name, tracker, uuid, numOfChunks.toInt, files, chunkHashes, chunksMissing)
+      new Scorrent(name, tracker, uuid, numOfChunks.toInt, files, chunkHashes, chunksMissing, state)
     }
     catch{
       case ex: Throwable => //TODO Should probably change this up, was a just a lazy thing

@@ -8,5 +8,5 @@ package ca.scorrent.scapp.Services
  * To change this template use File | Settings | File Templates.
  */
 object HeartBeat {
-  val Rate:Int = 20
+  val Rate: Int = 15
 }

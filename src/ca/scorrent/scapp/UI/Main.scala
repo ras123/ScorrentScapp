@@ -10,20 +10,21 @@ import scala.xml.XML
 import scala.concurrent._
 import ExecutionContext.Implicits.global
 import ca.scorrent.scapp.Model._
-import akka.actor.{ActorSystem, ActorLogging, Actor, Props}
-import ca.scorrent.scapp.Services.{Peers, PeerRequest, CheckIn}
+import akka.actor._
+import ca.scorrent.scapp.Services.{PeerRequest, CheckIn}
 import com.typesafe.config.ConfigFactory
 import ca.scorrent.scapp.Utils.{FileHasher, ChunkWriter, ScorrentParser, FileChunker}
 import scala.concurrent.duration._
-import scala.Some
-import ca.curls.test.shared.Chunk
-import ca.curls.test.shared.ChunkRequest
 import scala.collection.mutable.ListBuffer
-import scala.util.Random
-import scala.swing.event.WindowClosing
-import scala.swing.event.MouseClicked
-import scala.swing.event.ButtonClicked
 import akka.io.Tcp.Close
+import ca.scorrent.scapp.Services.Peers
+import ca.scorrent.scapp.Services.HeartBeat
+import scala.Some
+import scala.swing.event.WindowClosing
+import ca.curls.test.shared.Chunk
+import scala.swing.event.MouseClicked
+import ca.curls.test.shared.ChunkRequest
+import scala.swing.event.ButtonClicked
 
 /**
  * Created with IntelliJ IDEA.
@@ -143,7 +144,6 @@ object Main extends SimpleSwingApplication{
           chunksMissing = chunksMissingStr.split(',').map(idxStr => idxStr.toInt).toList
         }
 
-        // TODO: Test when there are no missing chunks
         loadFile(file, state, chunksMissing)
       }
       else {
@@ -354,7 +354,7 @@ object Main extends SimpleSwingApplication{
         val xml =
           <OpenScorrents>
             {for (scv <- listStView) yield <Scorrent file={scv.file.getAbsolutePath} uuid={scv.scorrent.uuid} mode={scv.scorrent.status.toString}
-            chunksMissing={scv.scorrent.getMissingChunks()._2}/>}
+                                                     chunksMissing={scv.scorrent.getMissingChunks()._2}/>}
           </OpenScorrents>
 
         val writer = new PrintWriter(currentlyOpen)
@@ -402,7 +402,7 @@ object Main extends SimpleSwingApplication{
       os.close()
       file = newFile
     }
-    val scor = ScorrentParser.Load(file, chunksMissing)
+    val scor = ScorrentParser.Load(file, state, chunksMissing)
     if(scor != null) {
       if(listStView.foldLeft(false)(
           (current, scv) =>
@@ -442,7 +442,8 @@ object Main extends SimpleSwingApplication{
     future {
       val xml =
         <OpenScorrents>
-          {for(scv <- listStView) yield <Scorrent file={scv.file.getAbsolutePath} uuid={scv.scorrent.uuid} mode={scv.scorrent.status.toString}/>}
+          {for(scv <- listStView) yield <Scorrent file={scv.file.getAbsolutePath} uuid={scv.scorrent.uuid} mode={scv.scorrent.status.toString}
+                                                  chunksMissing={scv.scorrent.getMissingChunks()._2}/>}
         </OpenScorrents>
 
       val writer = new PrintWriter(currentlyOpen)
@@ -465,37 +466,43 @@ object Main extends SimpleSwingApplication{
     val sc = scView.scorrent
     var corruptedChunks = new ListBuffer[Int]
     val chunksDownloaded = sc.numOfChunks - sc.getMissingChunks()._1
+    println("Chunks missing: " + sc.getMissingChunks()._1)
 
     // Create a ChunkWriter for storing received chunks
     val fileName = scView.scorrent.files(0) + "_downloaded"
     val filePath = UserPrefs.get[File](DownloadDirectory).getAbsolutePath + File.separator + fileName
     var writer = new ChunkWriter(new File(filePath), chunksDownloaded)
 
+    scView.progressBar.value = ScorrentView.PROGRESS_BAR_MAX * chunksDownloaded / sc.numOfChunks
+
     def receive = {
-      case "start" =>
-        println("Received start message")
-        scView.progressBar.value = ScorrentView.PROGRESS_BAR_MAX * chunksDownloaded / sc.numOfChunks
+      case "getpeers" =>
+        println("Asking tracker for peers")
         // Request a list of peers from the tracker
         tracker ! PeerRequest
       case Peers(peers) =>
-        // TODO: Need some kind of retry, also we should periodically check for new peers and handle peers leaving
-        if (peers.length != 0) {
-          println("Received Peers message: " + peers.head)
-          scView.setMode(Downloading)
+        if (peers.length != 0 && sc.peers.size == 0) {
+          println("Received Peers message: " + peers)
           // TODO: For now just select the first peer and start receiving chunks from it
           val peer = context.actorSelection(peers.head)
-          peer ! ChunkRequest(sc.getChunkIdx)
+          peer ! "handshake"
         }
+      case "handshake" =>
+        println("Received handshake from: " + sender.path)
+        scView.setMode(Downloading)
+        // Watch for peer termination
+        context.watch(sender)
+        sc.registerPeers(List(sender.path))
+        // Start requesting chunks
+        sender ! ChunkRequest(sc.nextChunkIdx)
       case Chunk(chunkNumber, chunk) =>
         printf("Received chunk # %d: ", chunkNumber)
         chunk.foreach(c => print(c.toChar))
         println()
 
-        var hash = FileHasher.getDatDankHash(chunk)
-        if (hash.equals(sc.chunkHashes(chunkNumber))) {
+        if (writer.verifyChunk(chunk, sc.chunkHashes(chunkNumber))) {
           writer.writeChunk(chunk, chunkNumber)
           if (writer.chunksWritten % 5 == 0) {
-
             scView.progressBar.value = ScorrentView.PROGRESS_BAR_MAX * writer.chunksWritten / sc.numOfChunks
           }
         } else {
@@ -506,7 +513,7 @@ object Main extends SimpleSwingApplication{
 
         // TODO: Remove eventually
         Thread.sleep(500)
-        val chunkIdx = sc.getChunkIdx()
+        val chunkIdx = sc.nextChunkIdx
         if (chunkIdx != -1) {
           // Get the next chunk from peer
           sender ! ChunkRequest(chunkIdx)
@@ -516,6 +523,18 @@ object Main extends SimpleSwingApplication{
           scView.setMode(Seeding)
           scView.progressBar.value = ScorrentView.PROGRESS_BAR_MAX
           sender ! Close
+        }
+      case "checkin" =>
+        // This tells the peer to checkin with the Tracker
+        tracker ! CheckIn
+      case Terminated(peer) =>
+        println("Peer terminated connection: " + peer)
+        // Unregister peer that closed the connection
+        sc.unregisterPeer(peer.path)
+        if (sc.peers.size == 0) {
+          println("No more active peers")
+          scView.setMode(Waiting)
+          self ! "getpeers"
         }
     }
   }
@@ -539,8 +558,8 @@ object Main extends SimpleSwingApplication{
       """))
 
     val peer = system.actorOf(PeerDownload.props(scView), name = "Peer")
-    system.scheduler.schedule(FiniteDuration(0L, SECONDS), FiniteDuration(15L, SECONDS), peer, "checkin")
-    peer ! "start"
+    system.scheduler.schedule(FiniteDuration(0L, SECONDS), FiniteDuration(HeartBeat.Rate, SECONDS), peer, "checkin")
+    system.scheduler.schedule(FiniteDuration(0L, SECONDS), FiniteDuration(25L, SECONDS), peer, "getpeers")
   }
 
   object PeerUpload {
@@ -551,10 +570,14 @@ object Main extends SimpleSwingApplication{
   class PeerUpload(scView: ScorrentView, chunks: Vector[Array[Byte]]) extends Actor with ActorLogging {
     // TODO: Use the tracker from .scor file
     val tracker = context.actorSelection("akka.tcp://TrackerSystem@localhost:1338/user/Tracker")
+    val sc = scView.scorrent
 
     def receive: Actor.Receive = {
       case ChunkRequest(chunkNumber) =>
         sender ! Chunk(chunkNumber, chunks(chunkNumber))
+      case "handshake" =>
+        // This starts up the connection between downloader & uploader
+        sender ! "handshake"
       case "checkin" =>
         // This tells the peer to checkin with the Tracker
         tracker ! CheckIn
@@ -584,6 +607,6 @@ object Main extends SimpleSwingApplication{
     val file = new File(filePath)
 
     val seed = system.actorOf(PeerUpload.props(scView, FileChunker.getChunks(file)), "Seed")
-    system.scheduler.schedule(FiniteDuration(0L, SECONDS), FiniteDuration(15L, SECONDS), seed, "checkin")
+    system.scheduler.schedule(FiniteDuration(0L, SECONDS), FiniteDuration(HeartBeat.Rate, SECONDS), seed, "checkin")
   }
 }

@@ -3,10 +3,11 @@ package ca.scorrent.scapp.Model
 import scala.concurrent._
 import ExecutionContext.Implicits.global
 import ca.curls.test._
-import akka.actor.{ActorLogging, Actor, Props}
+import akka.actor._
 import ca.curls.test.shared.{Chunk, ChunkRequest}
 import ca.scorrent.scapp.Services.CheckIn
 import scala.util.Random
+import scala.collection.mutable.HashSet
 
 /**
  * Created with IntelliJ IDEA.
@@ -21,15 +22,16 @@ class Scorrent(val name: String,
                val numOfChunks: Integer,
                val files: Vector[String],
                val chunkHashes: Vector[String],
-               var chunkIndices: List[Int] = Nil) {
-  var status: ScorrentState = Waiting
+               var chunkIndices: List[Int] = Nil,
+               var status: ScorrentState) {
+  var peers = new HashSet[ActorPath]
 
-  if (chunkIndices == Nil) {
+  if (status != Seeding && chunkIndices == Nil) {
     println("Generating random list of chunk indices")
     chunkIndices = Random.shuffle((0 until numOfChunks).toList)
   }
 
-  def getChunkIdx(): Int = {
+  def nextChunkIdx(): Int = {
     var chunkIdx = -1
     if (!chunkIndices.isEmpty) {
       chunkIdx = chunkIndices.head
@@ -52,6 +54,22 @@ class Scorrent(val name: String,
     })
 
     (chunksMissingCount, chunksMissing.toString())
+  }
+
+  def registerPeers(newPeers: List[ActorPath]) {
+    newPeers.foreach(peer => {
+      if (!peers.contains(peer)) {
+        println("Registering: " + peer)
+        peers.add(peer)
+      }
+    })
+  }
+
+  def unregisterPeer(peer: ActorPath) {
+    if (peers.contains(peer)) {
+      println("Unregistering: " + peer)
+      peers.remove(peer)
+    }
   }
 
   def getPercentDone() = {

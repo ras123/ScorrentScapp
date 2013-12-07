@@ -13,7 +13,7 @@ import scala.concurrent.duration._
  * To change this template use File | Settings | File Templates.
  */
 class Tracker extends Actor{
-  var peers: Map[ActorRef,Long] = new HashMap[ActorRef,Long]()
+  var peers: Map[ActorRef, Long] = new HashMap[ActorRef, Long]()
   var oldTimes: Map[ActorRef, Long] = new HashMap[ActorRef, Long]()
 
   def receive = {
@@ -38,7 +38,9 @@ class Tracker extends Actor{
                             }
                           ).size) != 0)
     case PeerRequest =>
-      sender ! Peers(peers.keys.toList.map( (ref) => {ref.path}))
+      // Return all peers in the swarm not including the sender
+      val swarm = peers.keys.toList
+      sender ! Peers(for (p <- swarm if p != sender) yield p.path)
     case Prune =>
       println("Pruning..")
       peers = peers.filter(
@@ -66,9 +68,9 @@ object TrackerDriver extends App {
         }
     }
   """))
+
   val tracker = system.actorOf(Props[Tracker], name = "Tracker")
 
   import system.dispatcher
-
-  system.scheduler.schedule(0 milliseconds, HeartBeat.Rate*2 seconds, tracker, Prune)
+  system.scheduler.schedule(0 milliseconds, HeartBeat.Rate * 2 seconds, tracker, Prune)
 }

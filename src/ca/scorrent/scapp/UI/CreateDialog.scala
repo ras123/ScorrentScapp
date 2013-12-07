@@ -129,7 +129,6 @@ class CreateDialog extends Dialog{
                         val test = fc.selectedFile
                         val xml = ScorrentParser.Build(teName.text, teTracker.text, files)
 
-                        println("Selected file: " + fc.selectedFile)
                         // TODO: Disabling the TrackerServer for now
                         //register(teTracker.text, (xml \\ "UUID" head) text)
 
