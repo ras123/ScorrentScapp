@@ -17,7 +17,7 @@ import ExecutionContext.Implicits.global
 object UserPrefs {
   val file = new File("prefs")
   val map: Map[Key, Any] = new HashMap[Key,Any]
-  if(file.exists){
+  if (file.exists) {
     val root = XML.loadFile(file)
     map put(DownloadDirectory, new File((root \ "DlDir" head) text))
     map put(ScorDirectory, new File((root \ "ScDir" head) text))
@@ -25,18 +25,17 @@ object UserPrefs {
     map put(PortNumber, ((root \ "Port" head) text) toInt)
     map put(Backup, ((root \ "Backup" head) text) == "true")
 
-  }
-  else{
+  } else {
     val dlDir = new File("downloads")
-    if(!dlDir.exists){
+    if(!dlDir.exists) {
       if(!dlDir.mkdir())
-        throw new Exception("Something fucked up")
+        throw new Exception("Unable to create downloads/ directory")
     }
 
     val scDir = new File("scors")
-    if(!scDir.exists){
-      if(!scDir.mkdir)
-        throw new Exception("fuck you")
+    if (!scDir.exists) {
+      if (!scDir.mkdir)
+        throw new Exception("Unable to create scors/ directory")
     }
 
     map put(DownloadDirectory, dlDir)

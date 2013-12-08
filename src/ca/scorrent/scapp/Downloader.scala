@@ -6,20 +6,23 @@ package ca.scorrent.scapp
  * Date: 27/11/13
  * Time: 8:05 PM
  * To change this template use File | Settings | File Templates.
+ *
+ * This class is kept for testing purposes only.
  */
-import akka.actor.{ActorSystem, Actor, Props}
+import akka.actor._
 import com.typesafe.config.ConfigFactory
-import ca.curls.test.shared.{ChunkRequest, Echo, Chunk}
-import java.io.{PrintWriter, BufferedWriter, File}
-import com.google.common.io.Files
-import java.nio.charset.Charset
+import akka.io.Tcp.Close
+import ca.curls.test.shared.ChunkRequest
+import akka.actor.Terminated
+import ca.curls.test.shared.Chunk
 
 /**
  * Server that receives chunks from a client and writes them to disk.
  */
-class Server extends Actor {
+class Downloader extends Actor {
   var chunks = Vector[Array[Byte]]()
-  val LAST_CHUNK = 1 // TODO: Hardcoded for now, will be determined from the .scor file
+  val LAST_CHUNK = 49 // TODO: Hardcoded for now, will be determined from the .scor file
+
 
   def receive = {
     case Chunk(chunkNumber, chunk) =>
@@ -28,21 +31,27 @@ class Server extends Actor {
       println()
       chunks = chunks :+ chunk
 
+      Thread.sleep(500)
       if (chunkNumber != LAST_CHUNK) {
         // Get the next chunk from peer
         sender ! ChunkRequest(chunkNumber + 1)
       } else {
         println("Received the last chunk, writing chunks to disk.")
-        val writer = new PrintWriter(Files.newWriter(new File("file.txt"), Charset.forName("UTF-8")))
+        /*val writer = new PrintWriter(Files.newWriter(new File("file.txt"), Charset.forName("UTF-8")))
         chunks.foreach(chunk => {
           println("Writing: " + new String(chunk))
           writer.write(new String(chunk))
         })
-        writer.close()
+        writer.close()*/
       }
-    case Echo(msg) =>
+    case "start" =>
+      context.watch(sender)
       // Start file transfer
       sender ! ChunkRequest(0)
+    case Terminated(actor) =>
+      println("Peer terminated connection: " + actor)
+      println("Peer path: " + actor.path)
+    case Close => println("Close")
   }
 }
 
@@ -62,6 +71,8 @@ object ServerDriver extends App {
         }
     }
   """))
-  val server = system.actorOf(Props[Server], name = "Server")
+  val server = system.actorOf(Props[Downloader], name = "Server")
+
+  system.shutdown()
 }
 

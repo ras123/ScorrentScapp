@@ -32,7 +32,7 @@ class CreateDialog extends Dialog{
   title = "Create a scorrent"
   val teName = new TextField()
   val teTracker = new TextField(){
-    text = "localhost:6969"
+    text = "akka.tcp://TrackerSystem@localhost:1338/user/Tracker"
   }
 
   val display = new BoxPanel(Orientation.Vertical)
@@ -128,9 +128,6 @@ class CreateDialog extends Dialog{
                       val f = future {
                         val test = fc.selectedFile
                         val xml = ScorrentParser.Build(teName.text, teTracker.text, files)
-
-                        // TODO: Disabling the TrackerServer for now
-                        //register(teTracker.text, (xml \\ "UUID" head) text)
 
                         val writer = new PrintWriter(fc.selectedFile)
                         writer.write(xml.mkString)
@@ -228,25 +225,6 @@ class CreateDialog extends Dialog{
         os.close()
       }
     }
-  }
-
-  def register(tracker:String, uuid: String) = {
-    val system = ActorSystem("Temp", ConfigFactory.parseString("""
-    akka {
-       actor {
-           provider = "akka.remote.RemoteActorRefProvider"
-       }
-       remote {
-           transport = "akka.remote.netty.NettyRemoteTransport"
-           netty.tcp {
-              hostname = "localhost"
-              port = 0
-           }
-        }
-    }
-    """))
-    println("Sending 'Register' msg to tracker manager.")
-    system.actorSelection("akka.tcp://TrackerSystem@"+tracker+"/user/Manager") ! Register(uuid)
   }
 }
 

@@ -21,7 +21,7 @@ object ScorrentParser {
       <Name>{name}</Name>
       <UUID>{FileHasher.getDatDankHashForNewFileName(name.getBytes)}</UUID>
       <Tracker>{tracker}</Tracker>
-      <ChunkSize>{Constants.CHUNKSIZE}</ChunkSize>{/*TODO Get some Kit Kat up in here */ }
+      <ChunkSize>{Constants.CHUNKSIZE}</ChunkSize>
       <Files>
         {for(f <- files) yield createXMLFile(f)}
       </Files>
@@ -45,7 +45,6 @@ object ScorrentParser {
       val tracker = (root \\ "Tracker" head) text
       val uuid = (root \\ "UUID" head) text
 
-      //TODO Actually load the scorrent in, just not a fraction of thigns
       val numOfChunks = (root \\ "NumOfChunks" head) text
       var files = Vector[String]()
       for(fileNode <- (root \\ "File")) {
@@ -61,7 +60,7 @@ object ScorrentParser {
       new Scorrent(name, tracker, uuid, numOfChunks.toInt, files, chunkHashes, chunksMissing, state)
     }
     catch{
-      case ex: Throwable => //TODO Should probably change this up, was a just a lazy thing
+      case ex: Throwable =>
         Dialog.showMessage(message = ex.getMessage, title = "Error opening", icon = UIManager.getIcon("OptionPane.errorIcon"))
         null
     }
@@ -103,21 +102,4 @@ object ScorrentParser {
     </Chunk>
     test
   }
-}
-
-// This is just for local testing
-object ScorrentParserDriver extends App {
-//  val scor = ScorrentParser.Load(new File("/home/ras/ScorrentScapp/scors/file.scor"))
-//  var chunks = FileChunker.getChunks(new File("file.txt"))
-
-  /*val currentlyOpen = new File("current")
-  val root = XML.loadFile(currentlyOpen)
-  for (node <- (root \ "Scorrent")) {
-    val chunksMissing = ScorrentParser.getAttribute(node, "chunksMissing")
-    //println("Chunks: " + chunksMissing)
-    var array = chunksMissing.split(',')
-    array.foreach(idx => println("Idx: " + idx))
-  }*/
-
-
 }

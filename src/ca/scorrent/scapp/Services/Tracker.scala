@@ -59,8 +59,6 @@ class Tracker extends Actor{
       }
     case "Stop" =>
       context stop self
-    case _ =>
-      println("Fuck off wrong thing sent")
   }
 }
 
